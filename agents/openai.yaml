@@ -1,0 +1,4 @@
+interface:
+  display_name: "发布 Skill 到 GitHub"
+  short_description: "安全发布或同步本地 Agent skill 到 GitHub。"
+  default_prompt: "帮我把这个本地 skill 发布或更新到 GitHub。"
