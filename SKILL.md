@@ -119,12 +119,42 @@ git clone https://github.com/<owner>/<repo>.git ~/.claude/skills/<skill-name>
 
 优先使用当前环境里最可靠的方式：
 
-1. GitHub connector / API 工具：账号已连接且仓库已存在时优先使用。
+1. GitHub connector / API 工具：账号已连接且仓库已存在时优先使用，尤其适合本机 Git 认证或网络不稳定的环境。
 2. 本地 Git：本机 Git 认证、TLS、权限都正常时使用。
 3. 浏览器辅助：仅在能控制浏览器，并且用户能自己处理登录、密码和 2FA 时使用。
 4. 让用户先创建空仓库：当无法自动创建 repo 时，让用户创建后发送 URL，再继续上传文件。
 
 不要要求用户在聊天里粘贴密码或 token。需要认证时，让用户在 GitHub 官方页面完成登录或授权。
+
+### 本机 Git 可用性预检
+
+不要因为本地有 `git` 命令就默认能 push。发布前先快速确认：
+
+- `gh` 是否存在且 `gh auth status` 可用。
+- `git credential fill` 或系统 credential helper 是否能返回 GitHub 凭据。
+- 远端仓库是否已存在，且当前账号有 push 权限。
+- 网络是否能稳定访问 `github.com:443`。
+
+如果出现下列任意现象，不要反复重试 `git push`，直接切到 GitHub connector / API 或浏览器辅助：
+
+- `could not read Username for 'https://github.com': Device not configured`
+- `Failed to connect to github.com port 443`
+- `Empty reply from server`
+- TLS、ACL、permission denied、repository not found 等认证或网络类错误
+
+本地 Git 失败后，要向用户说明这是运行环境的 Git 凭据或网络问题，不是 skill 内容本身的问题。
+
+### GitHub 网页上传注意事项
+
+GitHub 的 Upload files 页面适合上传根目录文件，但不要依赖它保留本地子目录结构。拖入 `scripts/run.py` 这类文件时，网页端可能只上传为根目录 `run.py`，导致仓库结构错误。
+
+对带目录的文件优先使用：
+
+- GitHub contents API / connector：按路径创建或更新，例如 `scripts/run.py`。
+- GitHub 网页的 New file 页面：在文件名输入框中明确输入完整路径，例如 `scripts/run.py`。
+- 低层 Git API：创建 blobs、tree、commit，再移动 branch ref。
+
+如果不得不用 Upload files 页面，上传后必须检查文件路径；发现被拍扁到根目录时，先删除错误文件，再用正确路径重新创建。
 
 ## 创建或更新仓库
 
@@ -140,6 +170,9 @@ git clone https://github.com/<owner>/<repo>.git ~/.claude/skills/<skill-name>
 - 本地 Git 因认证、TLS、ACL、权限或系统环境失败：改用 GitHub connector / API 逐文件创建或更新。
 - 用 API 更新文件前，先 fetch 远程文件拿到 SHA。
 - 不要盲目覆盖远程文件；如果远程已有用户修改，先比较或至少读回确认。
+- 用网页上传时，不要把子目录文件当作普通上传文件处理；`scripts/run.py`、`references/foo.md` 等必须验证远端路径仍然带目录。
+- 如果 connector 只有逐文件 contents API，按以下顺序处理：先创建 README 或根目录小文件让仓库初始化，再逐个创建 `.gitignore`、`SKILL.md`、`scripts/...` 等文件。
+- 如果一次性提交很重要且 connector 暴露 blobs/tree/commit/ref 工具，优先用低层 Git API 做单提交；否则接受多次小提交，但最终回复中说明使用了 connector / 网页辅助。
 
 ## 跨平台命令原则
 
@@ -168,6 +201,9 @@ git clone https://github.com/<owner>/<repo>.git "$HOME\.claude\skills\<skill-nam
 - 如果 skill 有可执行脚本，本地能运行基本帮助命令或最小 smoke test。
 - README 里的 GitHub owner、repo、skill name、安装路径都正确。
 - 能从 GitHub 读回至少一个关键文件，证明更新已经落地。
+- 对所有带子目录的关键文件，必须按完整路径读回，例如 `scripts/run.py`，并确认根目录没有误上传的 `run.py`。
+- 如果曾使用网页 Upload files 页面，额外检查是否有被拍扁的重复文件；发现 `run.py`、`foo.md` 等错误根目录文件时，删除后再结束。
+- 记录最终远端最新提交 SHA；如果过程产生多个提交，优先报告最新 SHA，并简短说明原因。
 
 ## 最终回复格式
 
